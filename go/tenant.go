@@ -119,7 +119,7 @@ func competitionFinishHandler(c echo.Context) error {
 	if !ok {
 		finish = []string{}
 	}
-	compFinishCache.Set(0, append(finish, id))
+	compFinishCache.Set(0, append(finish, strconv.Itoa(int(v.tenantID))+id))
 
 	competitionCache.Delete(id)
 	return c.JSON(http.StatusOK, SuccessResult{Status: true})

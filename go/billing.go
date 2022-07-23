@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strconv"
 
 	"github.com/logica0419/helpisu"
 )
@@ -40,7 +41,7 @@ var billingReportCache = helpisu.NewCache[string, BillingReport]()
 
 // 大会ごとの課金レポートを計算する
 func billingReportByCompetition(ctx context.Context, tenantDB dbOrTx, tenantID int64, competitionID string) (*BillingReport, error) {
-	billingReport, ok := billingReportCache.Get(competitionID)
+	billingReport, ok := billingReportCache.Get(strconv.Itoa(int(tenantID)) + competitionID)
 	if ok {
 		return &billingReport, nil
 	}
@@ -106,12 +107,14 @@ func billingReportByCompetition(ctx context.Context, tenantDB dbOrTx, tenantID i
 
 	// 大会が終了している場合のみ請求金額が確定するので計算する
 	var playerCount, visitorCount int64
-	for _, category := range billingMap {
-		switch category {
-		case "player":
-			playerCount++
-		case "visitor":
-			visitorCount++
+	if comp.FinishedAt.Valid {
+		for _, category := range billingMap {
+			switch category {
+			case "player":
+				playerCount++
+			case "visitor":
+				visitorCount++
+			}
 		}
 	}
 
@@ -125,7 +128,7 @@ func billingReportByCompetition(ctx context.Context, tenantDB dbOrTx, tenantID i
 		BillingYen:        100*playerCount + 10*visitorCount,
 	}
 
-	billingReportCache.Set(competitionID, billingReport)
+	billingReportCache.Set(strconv.Itoa(int(tenantID))+competitionID, billingReport)
 
 	return &billingReport, nil
 }
