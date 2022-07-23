@@ -10,6 +10,7 @@ Type=simple
 User=isucon
 Group=isucon
 WorkingDirectory=/home/isucon/webapp/go
+EnvironmentFile=/home/isucon/env.sh
 ExecStart=/home/isucon/webapp/go/cmd/isuports/isuports
 ExecStop=/bin/kill -s QUIT $MAINPID
 Restart=always
