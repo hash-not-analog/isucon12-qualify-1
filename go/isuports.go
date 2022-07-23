@@ -413,6 +413,7 @@ func retrievePlayer(ctx context.Context, tenantDB dbOrTx, id string) (*PlayerRow
 			return nil, fmt.Errorf("error Select player: id=%s, %w", id, err)
 		}
 	}
+	playerCache.Set(id, p)
 	return &p, nil
 }
 
@@ -501,7 +502,7 @@ func initializeHandler(c echo.Context) error {
 		return fmt.Errorf("error exec.Command: %s %e", string(out), err)
 	}
 
-	for i := 0; i < tenantNum; i++ {
+	for i := 1; i < tenantNum; i++ {
 		tenantDB, ok := tenantDBs.Get(int64(i))
 		if ok {
 			tenantDB.Close()
@@ -513,24 +514,6 @@ func initializeHandler(c echo.Context) error {
 	jwtTokenCache.Reset()
 	playerCache.Reset()
 	competitionCache.Reset()
-
-	for i := 0; i < tenantNum+10; i++ {
-		createTenantDB(int64(i))
-		tenantDB, _ := connectToTenantDB(int64(i))
-
-		var pls []PlayerRow
-		tenantDB.SelectContext(c.Request().Context(), &pls, "SELECT * FROM player")
-
-		for _, pl := range pls {
-			playerCache.Set(pl.ID, pl)
-		}
-
-		var cps []CompetitionRow
-		tenantDB.SelectContext(c.Request().Context(), &cps, "SELECT * FROM competition")
-		for _, cp := range cps {
-			competitionCache.Set(cp.ID, cp)
-		}
-	}
 
 	go dispenseUpdate()
 
