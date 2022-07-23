@@ -65,8 +65,6 @@ func billingReportByCompetition(ctx context.Context, tenantDB dbOrTx, tenantID i
 			continue
 		}
 		billingMap[vhs[i].PlayerID] = "visitor"
-
-		vhs = append(vhs[:i], vhs[i+1:]...)
 	}
 	vhsCache.Set(tenantID, vhs)
 
