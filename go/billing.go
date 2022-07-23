@@ -100,6 +100,10 @@ func billingReportByCompetition(ctx context.Context, tenantDB dbOrTx, tenantID i
 		}
 	}
 	for i := range scoredPlayers {
+		if scoredPlayers[i].CompetitionID != comp.ID {
+			continue
+		}
+
 		// スコアが登録されている参加者
 		billingMap[scoredPlayers[i].ID] = "player"
 	}
