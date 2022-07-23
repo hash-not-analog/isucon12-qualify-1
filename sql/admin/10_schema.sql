@@ -30,7 +30,7 @@ CREATE TABLE `visit_history` (
   `created_at` BIGINT NOT NULL,
   `updated_at` BIGINT NOT NULL,
   INDEX `tenant_id_idx` (`tenant_id`),
-  INDEX `player_id_idx` (`player_id`),
+  INDEX `player_id_idx` (`player_id`, `competition_id`, `tenant_id`),
 ) ENGINE = InnoDB DEFAULT CHARACTER SET = utf8mb4;
 
 CREATE INDEX tenant_competition_idx ON visit_history (tenant_id, competition_id);

@@ -219,7 +219,7 @@ func tenantsBillingHandler(c echo.Context) error {
 	if err := adminDB.SelectContext(
 		ctx,
 		&vhs,
-		"SELECT player_id, MIN(created_at) AS min_created_at, competition_id, tenant_id FROM visit_history GROUP BY player_id",
+		"SELECT player_id, MIN(created_at) AS min_created_at, competition_id, tenant_id FROM visit_history GROUP BY player_id, competition_id, tenant_id",
 	); err != nil && err != sql.ErrNoRows {
 		return fmt.Errorf("error Select visit_history. %w", err)
 	}
