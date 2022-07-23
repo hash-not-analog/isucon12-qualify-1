@@ -41,7 +41,6 @@ func competitionsAddHandler(c echo.Context) error {
 	if err != nil {
 		return err
 	}
-	defer tenantDB.Close()
 
 	title := c.FormValue("title")
 
@@ -87,7 +86,6 @@ func competitionFinishHandler(c echo.Context) error {
 	if err != nil {
 		return err
 	}
-	defer tenantDB.Close()
 
 	id := c.Param("competition_id")
 	if id == "" {
@@ -137,7 +135,6 @@ func competitionScoreHandler(c echo.Context) error {
 	if err != nil {
 		return err
 	}
-	defer tenantDB.Close()
 
 	competitionID := c.Param("competition_id")
 	if competitionID == "" {
@@ -282,7 +279,6 @@ func billingHandler(c echo.Context) error {
 	if err != nil {
 		return err
 	}
-	defer tenantDB.Close()
 
 	cs := []CompetitionRow{}
 	if err := tenantDB.SelectContext(
