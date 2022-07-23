@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 
 	"github.com/go-sql-driver/mysql"
 	"github.com/gofrs/flock"
@@ -45,6 +46,8 @@ var (
 
 	sqliteDriverName = "sqlite3"
 	tenantDBs        = helpisu.NewCache[int64, *sqlx.DB]()
+	dispenseMu       = sync.Mutex{}
+	curId            = 0
 )
 
 // 環境変数を取得する、なければデフォルト値を返す
@@ -103,28 +106,11 @@ func createTenantDB(id int64) error {
 // システム全体で一意なIDを生成する
 // これMutexと加算で置き換えられる
 func dispenseID(ctx context.Context) (string, error) {
-	var id int64
-	var lastErr error
-	for i := 0; i < 100; i++ {
-		var ret sql.Result
-		ret, err := adminDB.ExecContext(ctx, "REPLACE INTO id_generator (stub) VALUES (?);", "a")
-		if err != nil {
-			if merr, ok := err.(*mysql.MySQLError); ok && merr.Number == 1213 { // deadlock
-				lastErr = fmt.Errorf("error REPLACE INTO id_generator: %w", err)
-				continue
-			}
-			return "", fmt.Errorf("error REPLACE INTO id_generator: %w", err)
-		}
-		id, err = ret.LastInsertId()
-		if err != nil {
-			return "", fmt.Errorf("error ret.LastInsertId: %w", err)
-		}
-		break
-	}
-	if id != 0 {
-		return fmt.Sprintf("%x", id), nil
-	}
-	return "", lastErr
+	res := fmt.Sprintf("%x", curId)
+	dispenseMu.Lock()
+	curId += 1
+	dispenseMu.Unlock()
+	return res, nil
 }
 
 // 全APIにCache-Control: privateを設定する
