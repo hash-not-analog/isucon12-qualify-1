@@ -68,6 +68,7 @@ func connectAdminDB() (*sqlx.DB, error) {
 	config.Passwd = getEnv("ISUCON_DB_PASSWORD", "isucon")
 	config.DBName = getEnv("ISUCON_DB_NAME", "isuports")
 	config.ParseTime = true
+	config.InterpolateParams = true
 	dsn := config.FormatDSN()
 	return sqlx.Open("mysql", dsn)
 }
@@ -235,6 +236,16 @@ type Viewer struct {
 	tenantID   int64
 }
 
+var jwtKeyCache = helpisu.NewCache[bool, any]()
+
+type TokenData struct {
+	subject string
+	role    string
+	aud     []string
+}
+
+var jwtTokenCache = helpisu.NewCache[string, TokenData]()
+
 // リクエストヘッダをパースしてViewerを返す
 // JWTのキーキャッシュできる
 func parseViewer(c echo.Context) (*Viewer, error) {
@@ -247,55 +258,74 @@ func parseViewer(c echo.Context) (*Viewer, error) {
 	}
 	tokenStr := cookie.Value
 
-	keyFilename := getEnv("ISUCON_JWT_KEY_FILE", "../public.pem")
-	keysrc, err := os.ReadFile(keyFilename)
-	if err != nil {
-		return nil, fmt.Errorf("error os.ReadFile: keyFilename=%s: %w", keyFilename, err)
-	}
-	key, _, err := jwk.DecodePEM(keysrc)
-	if err != nil {
-		return nil, fmt.Errorf("error jwk.DecodePEM: %w", err)
-	}
-
-	token, err := jwt.Parse(
-		[]byte(tokenStr),
-		jwt.WithKey(jwa.RS256, key),
-	)
-	if err != nil {
-		return nil, echo.NewHTTPError(http.StatusUnauthorized, fmt.Errorf("error jwt.Parse: %s", err.Error()))
-	}
-	if token.Subject() == "" {
-		return nil, echo.NewHTTPError(
-			http.StatusUnauthorized,
-			fmt.Sprintf("invalid token: subject is not found in token: %s", tokenStr),
-		)
-	}
-
-	var role string
-	tr, ok := token.Get("role")
+	var subject, role string
+	aud := []string{}
+	tokenData, ok := jwtTokenCache.Get(tokenStr)
 	if !ok {
-		return nil, echo.NewHTTPError(
-			http.StatusUnauthorized,
-			fmt.Sprintf("invalid token: role is not found: %s", tokenStr),
+		jwtTokenCache.Get(tokenStr)
+		key, ok := jwtKeyCache.Get(true)
+		if !ok {
+			keyFilename := getEnv("ISUCON_JWT_KEY_FILE", "../public.pem")
+			keysrc, err := os.ReadFile(keyFilename)
+			if err != nil {
+				return nil, fmt.Errorf("error os.ReadFile: keyFilename=%s: %w", keyFilename, err)
+			}
+			key, _, err = jwk.DecodePEM(keysrc)
+			if err != nil {
+				return nil, fmt.Errorf("error jwk.DecodePEM: %w", err)
+			}
+
+			jwtKeyCache.Set(true, key)
+		}
+
+		token, err := jwt.Parse(
+			[]byte(tokenStr),
+			jwt.WithKey(jwa.RS256, key),
 		)
+		if err != nil {
+			return nil, echo.NewHTTPError(http.StatusUnauthorized, fmt.Errorf("error jwt.Parse: %s", err.Error()))
+		}
+		if subject = token.Subject(); subject == "" {
+			return nil, echo.NewHTTPError(
+				http.StatusUnauthorized,
+				fmt.Sprintf("invalid token: subject is not found in token: %s", tokenStr),
+			)
+		}
+
+		tr, ok := token.Get("role")
+		if !ok {
+			return nil, echo.NewHTTPError(
+				http.StatusUnauthorized,
+				fmt.Sprintf("invalid token: role is not found: %s", tokenStr),
+			)
+		}
+		switch tr {
+		case RoleAdmin, RoleOrganizer, RolePlayer:
+			role = tr.(string)
+		default:
+			return nil, echo.NewHTTPError(
+				http.StatusUnauthorized,
+				fmt.Sprintf("invalid token: invalid role: %s", tokenStr),
+			)
+		}
+		// aud は1要素でテナント名がはいっている
+		aud = token.Audience()
+		if len(aud) != 1 {
+			return nil, echo.NewHTTPError(
+				http.StatusUnauthorized,
+				fmt.Sprintf("invalid token: aud field is few or too much: %s", tokenStr),
+			)
+		}
+
+		jwtTokenCache.Set(tokenStr, TokenData{
+			subject: subject,
+			role:    role,
+			aud:     aud,
+		})
+	} else {
+		subject, role, aud = tokenData.subject, tokenData.role, tokenData.aud
 	}
-	switch tr {
-	case RoleAdmin, RoleOrganizer, RolePlayer:
-		role = tr.(string)
-	default:
-		return nil, echo.NewHTTPError(
-			http.StatusUnauthorized,
-			fmt.Sprintf("invalid token: invalid role: %s", tokenStr),
-		)
-	}
-	// aud は1要素でテナント名がはいっている
-	aud := token.Audience()
-	if len(aud) != 1 {
-		return nil, echo.NewHTTPError(
-			http.StatusUnauthorized,
-			fmt.Sprintf("invalid token: aud field is few or too much: %s", tokenStr),
-		)
-	}
+
 	tenant, err := retrieveTenantRowFromHeader(c)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -316,7 +346,7 @@ func parseViewer(c echo.Context) (*Viewer, error) {
 
 	v := &Viewer{
 		role:       role,
-		playerID:   token.Subject(),
+		playerID:   subject,
 		tenantName: tenant.Name,
 		tenantID:   tenant.ID,
 	}
@@ -372,11 +402,15 @@ type PlayerRow struct {
 	UpdatedAt      int64  `db:"updated_at"`
 }
 
+var playerCache = helpisu.NewCache[string, PlayerRow]()
+
 // 参加者を取得する
 func retrievePlayer(ctx context.Context, tenantDB dbOrTx, id string) (*PlayerRow, error) {
-	var p PlayerRow
-	if err := tenantDB.GetContext(ctx, &p, "SELECT * FROM player WHERE id = ?", id); err != nil {
-		return nil, fmt.Errorf("error Select player: id=%s, %w", id, err)
+	p, ok := playerCache.Get(id)
+	if !ok {
+		if err := tenantDB.GetContext(ctx, &p, "SELECT * FROM player WHERE id = ?", id); err != nil {
+			return nil, fmt.Errorf("error Select player: id=%s, %w", id, err)
+		}
 	}
 	return &p, nil
 }
@@ -406,11 +440,17 @@ type CompetitionRow struct {
 	UpdatedAt  int64         `db:"updated_at"`
 }
 
+var competitionCache = helpisu.NewCache[string, CompetitionRow]()
+
 // 大会を取得する
 func retrieveCompetition(ctx context.Context, tenantDB dbOrTx, id string) (*CompetitionRow, error) {
-	var c CompetitionRow
-	if err := tenantDB.GetContext(ctx, &c, "SELECT * FROM competition WHERE id = ?", id); err != nil {
-		return nil, fmt.Errorf("error Select competition: id=%s, %w", id, err)
+	c, ok := competitionCache.Get(id)
+	if !ok {
+		if err := tenantDB.GetContext(ctx, &c, "SELECT * FROM competition WHERE id = ?", id); err != nil {
+			return nil, fmt.Errorf("error Select competition: id=%s, %w", id, err)
+		}
+
+		competitionCache.Set(id, c)
 	}
 	return &c, nil
 }
@@ -456,6 +496,9 @@ func initializeHandler(c echo.Context) error {
 	if err != nil {
 		return fmt.Errorf("error exec.Command: %s %e", string(out), err)
 	}
+	res := InitializeHandlerResult{
+		Lang: "go",
+	}
 
 	for i := 0; i < 100; i++ {
 		tenantDB, ok := tenantDBs.Get(int64(i))
@@ -464,6 +507,10 @@ func initializeHandler(c echo.Context) error {
 		}
 	}
 	tenantDBs.Reset()
+	jwtKeyCache.Reset()
+	jwtTokenCache.Reset()
+	playerCache.Reset()
+	competitionCache.Reset()
 
 	go dispenseUpdate()
 
