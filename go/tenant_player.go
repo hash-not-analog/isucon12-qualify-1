@@ -90,6 +90,8 @@ func playersAddHandler(c echo.Context) error {
 	displayNames := params["display_name[]"]
 
 	pds := make([]PlayerDetail, 0, len(displayNames))
+
+	players := make([]PlayerRow, len(displayNames))
 	for _, displayName := range displayNames {
 		id, err := dispenseID(ctx)
 		if err != nil {
@@ -97,25 +99,24 @@ func playersAddHandler(c echo.Context) error {
 		}
 
 		now := time.Now().Unix()
-		if _, err := tenantDB.ExecContext(
-			ctx,
-			"INSERT INTO player (id, tenant_id, display_name, is_disqualified, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
-			id, v.tenantID, displayName, false, now, now,
-		); err != nil {
-			return fmt.Errorf(
-				"error Insert player at tenantDB: id=%s, displayName=%s, isDisqualified=%t, createdAt=%d, updatedAt=%d, %w",
-				id, displayName, false, now, now, err,
-			)
-		}
-		p, err := retrievePlayer(ctx, tenantDB, id)
-		if err != nil {
-			return fmt.Errorf("error retrievePlayer: %w", err)
-		}
+		player := PlayerRow{v.tenantID, id, displayName, false, now, now}
+		players = append(players, player)
+
 		pds = append(pds, PlayerDetail{
-			ID:             p.ID,
-			DisplayName:    p.DisplayName,
-			IsDisqualified: p.IsDisqualified,
+			ID:             player.ID,
+			DisplayName:    player.DisplayName,
+			IsDisqualified: player.IsDisqualified,
 		})
+
+		playerCache.Set(id, player)
+	}
+
+	_, err = tenantDB.NamedExec("INSERT INTO player (id, tenant_id, display_name, is_disqualified, created_at, updated_at) values (:id, :tenant_id, :display_name, :is_disqualified, :created_at, :updated_at)", players)
+	if err != nil {
+		return fmt.Errorf(
+			"error Insert player at tenantDB: %w",
+			err,
+		)
 	}
 
 	res := PlayersAddHandlerResult{
