@@ -483,6 +483,12 @@ type InitializeHandlerResult struct {
 // ベンチマーカーが起動したときに最初に呼ぶ
 // データベースの初期化などが実行されるため、スキーマを変更した場合などは適宜改変すること
 func initializeHandler(c echo.Context) error {
+	for i := 0; i < 100; i++ {
+		tenantDB, ok := tenantDBs.Get(int64(i))
+		if ok {
+			tenantDB.Close()
+		}
+	}
 	tenantDBs.Reset()
 
 	out, err := exec.Command(initializeScript).CombinedOutput()
