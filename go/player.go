@@ -15,8 +15,7 @@ import (
 )
 
 var (
-	visitHistories    = helpisu.NewCache[int, []VisitHistoryRow]()
-	competitionBuffer = helpisu.NewCache[int64, []CompetitionRow]()
+	visitHistories = helpisu.NewCache[int, []VisitHistoryRow]()
 )
 
 type PlayerScoreDetail struct {
