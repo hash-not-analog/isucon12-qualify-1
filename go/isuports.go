@@ -533,6 +533,8 @@ func initializeHandler(c echo.Context) error {
 	}
 
 	go dispenseUpdate()
+	insertVisitHistory := helpisu.NewTicker(2000, delayedInsertVisitHistory)
+	go insertVisitHistory.Start()
 
 	res := InitializeHandlerResult{
 		Lang: "go",

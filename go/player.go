@@ -13,6 +13,10 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
+var (
+	visitHistories = []VisitHistoryRow{}
+)
+
 type PlayerScoreDetail struct {
 	CompetitionTitle string `json:"competition_title"`
 	Score            int64  `json:"score"`
@@ -188,6 +192,8 @@ func competitionRankingHandler(c echo.Context) error {
 		return fmt.Errorf("error Select tenant: id=%d, %w", v.tenantID, err)
 	}
 
+	visitHistories = append(visitHistories, VisitHistoryRow{v.playerID, tenant.ID, competitionID, now, now})
+
 	if _, err := adminDB.ExecContext(
 		ctx,
 		"INSERT INTO visit_history (player_id, tenant_id, competition_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
@@ -277,6 +283,14 @@ func competitionRankingHandler(c echo.Context) error {
 		},
 	}
 	return c.JSON(http.StatusOK, res)
+}
+
+func delayedInsertVisitHistory() {
+	_, _ = adminDB.NamedExec(
+		"INSERT INTO visit_history (player_id, tenant_id, competition_id, created_at, updated_at) VALUES (:player_id, :tenant_id, :competition_id, :created_at, :updated_at)",
+		visitHistories,
+	)
+	visitHistories = make([]VisitHistoryRow, 0, 100)
 }
 
 type CompetitionsHandlerResult struct {
