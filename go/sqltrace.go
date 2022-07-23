@@ -30,12 +30,7 @@ func initializeSQLLogger() (string, io.Closer, error) {
 	traceLogEncoder = json.NewEncoder(traceLogFile)
 	traceLogEncoder.SetEscapeHTML(false)
 	driverName := "sqlite3-with-trace"
-	sql.Register(driverName, proxy.NewProxyContext(&sqlite3.SQLiteDriver{}, &proxy.HooksContext{
-		PreExec:   traceLogPre,
-		PostExec:  traceLogPostExec,
-		PreQuery:  traceLogPre,
-		PostQuery: traceLogPostQuery,
-	}))
+	sql.Register(driverName, proxy.NewProxyContext(&sqlite3.SQLiteDriver{}, &proxy.HooksContext{}))
 	return driverName, traceLogFile, nil
 }
 
