@@ -2,12 +2,14 @@ package isuports
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"net/http"
 	"strconv"
 	"time"
 
 	"github.com/go-sql-driver/mysql"
+	"github.com/jmoiron/sqlx"
 	"github.com/labstack/echo/v4"
 )
 
@@ -92,10 +94,16 @@ type TenantWithBilling struct {
 	Name        string `json:"name"`
 	DisplayName string `json:"display_name"`
 	BillingYen  int64  `json:"billing"`
+	tenantID    int64  `json:"-"`
 }
 
 type TenantsBillingHandlerResult struct {
 	Tenants []TenantWithBilling `json:"tenants"`
+}
+
+type scoredPlayer struct {
+	ID            string `db:"pid"`
+	CompetitionID string `db:"competition_id"`
 }
 
 // SaaS管理者用API
@@ -135,51 +143,164 @@ func tenantsBillingHandler(c echo.Context) error {
 	//     scoreが登録されていないplayerでアクセスした人 * 10
 	//   を合計したものを
 	// テナントの課金とする
-	ts := []TenantRow{}
-	if err := adminDB.SelectContext(ctx, &ts, "SELECT * FROM tenant ORDER BY id DESC"); err != nil {
-		return fmt.Errorf("error Select tenant: %w", err)
-	}
-	tenantBillings := make([]TenantWithBilling, 0, len(ts))
-	for _, t := range ts {
-		if beforeID != 0 && beforeID <= t.ID {
+	// ts := []TenantRow{}
+	// if err := adminDB.SelectContext(ctx, &ts, "SELECT * FROM tenant ORDER BY id DESC"); err != nil {
+	// 	return fmt.Errorf("error Select tenant: %w", err)
+
+	// player_scoreを読んでいるときに更新が走ると不整合が起こるのでロックを取得する
+	billingMap := map[string]string{}
+
+	var tenants = make([]TenantRow, 0, 200)
+	adminDB.GetContext(c.Request().Context(), &tenants, "SELECT * FROM tenant ORDER BY id DESC") // }
+
+	tenantBillings := make([]TenantWithBilling, 0, len(tenants))
+
+	for i := range tenants {
+		if beforeID != 0 && beforeID <= tenants[i].ID {
 			continue
 		}
-		err := func(t TenantRow) error {
-			tb := TenantWithBilling{
-				ID:          strconv.FormatInt(t.ID, 10),
-				Name:        t.Name,
-				DisplayName: t.DisplayName,
-			}
-			tenantDB, err := connectToTenantDB(t.ID)
-			if err != nil {
-				return fmt.Errorf("failed to connectToTenantDB: %w", err)
-			}
-			cs := []CompetitionRow{}
-			if err := tenantDB.SelectContext(
-				ctx,
-				&cs,
-				"SELECT * FROM competition WHERE tenant_id=?",
-				t.ID,
-			); err != nil {
-				return fmt.Errorf("failed to Select competition: %w", err)
-			}
-			for _, comp := range cs {
-				report, err := billingReportByCompetition(ctx, tenantDB, t.ID, comp.ID)
-				if err != nil {
-					return fmt.Errorf("failed to billingReportByCompetition: %w", err)
-				}
-				tb.BillingYen += report.BillingYen
-			}
-			tenantBillings = append(tenantBillings, tb)
-			return nil
-		}(t)
-		if err != nil {
-			return err
-		}
+
+		tenantBillings = append(tenantBillings, TenantWithBilling{
+			ID:          strconv.FormatInt(tenants[i].ID, 10),
+			Name:        tenants[i].Name,
+			DisplayName: tenants[i].DisplayName,
+			BillingYen:  0,
+			tenantID:    tenants[i].ID,
+		})
+
 		if len(tenantBillings) >= 10 {
 			break
 		}
 	}
+
+	currentCompID := ""
+
+	for i := range tenantBillings {
+		tenantDB, _ := connectToTenantDB(tenantBillings[i].tenantID)
+
+		fl, err := flockByTenantID(tenantBillings[i].tenantID)
+		if err != nil {
+			return fmt.Errorf("error flockByTenantID: %w", err)
+		}
+
+		fl.Close()
+
+		// スコアを登録した参加者のIDを取得する
+		scoredPlayers := []scoredPlayer{}
+		if err := tenantDB.SelectContext(
+			ctx,
+			&scoredPlayers,
+			"SELECT DISTINCT(player_id) as pid, competition_id FROM player_score ORDER BY competition_id",
+		); err != nil && err != sql.ErrNoRows {
+			return fmt.Errorf("error Select count player_score: %w", err)
+		}
+
+		for i := range scoredPlayers {
+			var comp *CompetitionRow
+			if currentCompID != scoredPlayers[i].CompetitionID {
+				currentCompID = scoredPlayers[i].CompetitionID
+				comp, _ = retrieveCompetition(ctx, tenantDB, currentCompID)
+			}
+
+			if comp == nil || !comp.FinishedAt.Valid {
+				continue
+			}
+
+			// スコアが登録されている参加者
+			billingMap[scoredPlayers[i].ID] = "player"
+			tenantBillings[i].BillingYen += 100
+		}
+	}
+
+	currentCompID = ""
+
+	// ランキングにアクセスした参加者のIDを取得する
+	vhs := []VisitHistorySummaryRow{}
+	if err := adminDB.SelectContext(
+		ctx,
+		&vhs,
+		"SELECT player_id, MIN(created_at) AS min_created_at, competition_id, tenant_id FROM visit_history GROUP BY player_id",
+	); err != nil && err != sql.ErrNoRows {
+		return fmt.Errorf("error Select visit_history. %w", err)
+	}
+	var currentTenantID int64 = -1
+	var comp *CompetitionRow
+	for _, vh := range vhs {
+		var tenantDB *sqlx.DB
+		var index int
+		if currentTenantID != vh.TenantID {
+			currentTenantID = vh.TenantID
+			tenantDB, _ = connectToTenantDB(vh.TenantID)
+
+			for i := range tenantBillings {
+				if tenantBillings[i].tenantID == currentTenantID {
+					index = i
+					break
+				}
+			}
+		}
+
+		if beforeID != 0 && beforeID <= currentTenantID {
+			continue
+		}
+
+		if currentCompID != vh.CompetitionID {
+			currentCompID = vh.CompetitionID
+			comp, _ = retrieveCompetition(ctx, tenantDB, currentCompID)
+		}
+
+		if comp.FinishedAt.Valid {
+			// competition.finished_atよりもあとの場合は、終了後に訪問したとみなして大会開催内アクセス済みとみなさない
+			if comp.FinishedAt.Int64 < vh.MinCreatedAt {
+				continue
+			}
+
+			if billingMap[vh.PlayerID] != "player" {
+				tenantBillings[index].BillingYen += 10
+			}
+		}
+	}
+
+	// for _, t := range ts {
+	// 	if beforeID != 0 && beforeID <= t.ID {
+	// 		continue
+	// 	}
+	// 	err := func(t TenantRow) error {
+	// 		tb := TenantWithBilling{
+	// 			ID:          strconv.FormatInt(t.ID, 10),
+	// 			Name:        t.Name,
+	// 			DisplayName: t.DisplayName,
+	// 		}
+	// 		tenantDB, err := connectToTenantDB(t.ID)
+	// 		if err != nil {
+	// 			return fmt.Errorf("failed to connectToTenantDB: %w", err)
+	// 		}
+	// 		cs := []CompetitionRow{}
+	// 		if err := tenantDB.SelectContext(
+	// 			ctx,
+	// 			&cs,
+	// 			"SELECT * FROM competition WHERE tenant_id=?",
+	// 			t.ID,
+	// 		); err != nil {
+	// 			return fmt.Errorf("failed to Select competition: %w", err)
+	// 		}
+	// 		for _, comp := range cs {
+	// 			report, err := billingReportByCompetition(ctx, tenantDB, t.ID, comp.ID)
+	// 			if err != nil {
+	// 				return fmt.Errorf("failed to billingReportByCompetition: %w", err)
+	// 			}
+	// 			tb.BillingYen += report.BillingYen
+	// 		}
+	// 		tenantBillings = append(tenantBillings, tb)
+	// 		return nil
+	// 	}(t)
+	// 	if err != nil {
+	// 		return err
+	// 	}
+	// 	if len(tenantBillings) >= 10 {
+	// 		break
+	// 	}
+	// }
 	return c.JSON(http.StatusOK, SuccessResult{
 		Status: true,
 		Data: TenantsBillingHandlerResult{
