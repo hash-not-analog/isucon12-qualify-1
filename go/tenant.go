@@ -71,15 +71,9 @@ func competitionsAddHandler(c echo.Context) error {
 	return c.JSON(http.StatusOK, SuccessResult{Status: true, Data: res})
 }
 
-type IDTime struct {
-	ID         string `db:"id"`
-	FinishedAt int64  `db:"finished_at"`
-	UpdatedAt  int64  `db:"updated_at"`
-}
+var compFinishCache = helpisu.NewCache[int, []string]()
 
-var compFinishCache = helpisu.NewCache[int, map[int64][]IDTime]()
-
-// テナント管理者向けAPI
+/// テナント管理者向けAPI
 // POST /api/organizer/competition/:competition_id/finish
 // 大会を終了する
 func competitionFinishHandler(c echo.Context) error {
@@ -90,10 +84,12 @@ func competitionFinishHandler(c echo.Context) error {
 	} else if v.role != RoleOrganizer {
 		return echo.NewHTTPError(http.StatusForbidden, "role organizer required")
 	}
+
 	tenantDB, err := connectToTenantDB(v.tenantID)
 	if err != nil {
 		return err
 	}
+
 	id := c.Param("competition_id")
 	if id == "" {
 		return echo.NewHTTPError(http.StatusBadRequest, "competition_id required")
@@ -108,38 +104,31 @@ func competitionFinishHandler(c echo.Context) error {
 	}
 
 	now := time.Now().Unix()
+	if _, err := tenantDB.ExecContext(
+		ctx,
+		"UPDATE competition SET finished_at = ?, updated_at = ? WHERE id = ?",
+		now, now, id,
+	); err != nil {
+		return fmt.Errorf(
+			"error Update competition: finishedAt=%d, updatedAt=%d, id=%s, %w",
+			now, now, id, err,
+		)
+	}
 
 	finish, ok := compFinishCache.Get(0)
 	if !ok {
-		finish = make(map[int64][]IDTime)
+		finish = []string{}
 	}
-	finish[v.tenantID] = append(finish[v.tenantID], IDTime{ID: id, FinishedAt: now, UpdatedAt: now})
-	compFinishCache.Set(0, finish)
+	compFinishCache.Set(0, append(finish, id))
 
+	competitionCache.Delete(id)
 	return c.JSON(http.StatusOK, SuccessResult{Status: true})
 }
 
 func updateCompetitionFinish() {
 	finish, _ := compFinishCache.GetAndDelete(0)
-
-	for i, v := range finish {
-		tenantDB, err := connectToTenantDB(i)
-		if err != nil {
-			return
-		}
-
-		if _, err := tenantDB.NamedExec(
-			"INSERT INTO competition (id, finished_at, updated_at) "+
-				"VALUES (:id, :finished_at, :updated_at) ON DUPLICATE KEY UPDATE finished_at = :finished_at, updated_at = :updated_at",
-			v,
-		); err != nil {
-			return
-		}
-
-		for j := range v {
-			competitionCache.Delete(v[j].ID)
-			billingReportCache.Delete(v[j].ID)
-		}
+	for j := range finish {
+		billingReportCache.Delete(finish[j])
 	}
 }
 
