@@ -116,7 +116,7 @@ regexp = '^(GET) /api/player/player/[0-9a-z]*'
 name = 'GET /api/player/player/:player_id'
 
 [[bundle]]
-regexp = '^(GET) /api/player/competition/[0-9a-z]/ranking'
+regexp = '^(GET) /api/player/competition/[0-9a-z]*/ranking'
 name = 'GET /api/player/competition/:competition_id/ranking'
 
 ################################################################################
