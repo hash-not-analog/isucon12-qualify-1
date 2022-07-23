@@ -107,7 +107,7 @@ func createTenantDB(id int64) error {
 // これMutexと加算で置き換えられる
 func dispenseID(ctx context.Context) (string, error) {
 	if curId == -1 {
-		adminDB.Get(curId, "SELECT COUNT(*) FROM id_generator;")
+		adminDB.Get(curId, "SELECT id FROM id_generator WHERE stub='a';")
 	}
 	dispenseMu.Lock()
 	curId += 1
