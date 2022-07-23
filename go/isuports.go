@@ -23,6 +23,7 @@ import (
 	"github.com/lestrrat-go/jwx/v2/jwa"
 	"github.com/lestrrat-go/jwx/v2/jwk"
 	"github.com/lestrrat-go/jwx/v2/jwt"
+	"github.com/logica0419/helpisu"
 )
 
 const (
@@ -230,6 +231,16 @@ type Viewer struct {
 	tenantID   int64
 }
 
+var jwtKeyCache = helpisu.NewCache[bool, any]()
+
+type TokenData struct {
+	subject string
+	role    string
+	aud     []string
+}
+
+var jwtTokenCache = helpisu.NewCache[string, TokenData]()
+
 // リクエストヘッダをパースしてViewerを返す
 // JWTのキーキャッシュできる
 func parseViewer(c echo.Context) (*Viewer, error) {
@@ -242,55 +253,74 @@ func parseViewer(c echo.Context) (*Viewer, error) {
 	}
 	tokenStr := cookie.Value
 
-	keyFilename := getEnv("ISUCON_JWT_KEY_FILE", "../public.pem")
-	keysrc, err := os.ReadFile(keyFilename)
-	if err != nil {
-		return nil, fmt.Errorf("error os.ReadFile: keyFilename=%s: %w", keyFilename, err)
-	}
-	key, _, err := jwk.DecodePEM(keysrc)
-	if err != nil {
-		return nil, fmt.Errorf("error jwk.DecodePEM: %w", err)
-	}
-
-	token, err := jwt.Parse(
-		[]byte(tokenStr),
-		jwt.WithKey(jwa.RS256, key),
-	)
-	if err != nil {
-		return nil, echo.NewHTTPError(http.StatusUnauthorized, fmt.Errorf("error jwt.Parse: %s", err.Error()))
-	}
-	if token.Subject() == "" {
-		return nil, echo.NewHTTPError(
-			http.StatusUnauthorized,
-			fmt.Sprintf("invalid token: subject is not found in token: %s", tokenStr),
-		)
-	}
-
-	var role string
-	tr, ok := token.Get("role")
+	var subject, role string
+	aud := []string{}
+	tokenData, ok := jwtTokenCache.Get(tokenStr)
 	if !ok {
-		return nil, echo.NewHTTPError(
-			http.StatusUnauthorized,
-			fmt.Sprintf("invalid token: role is not found: %s", tokenStr),
+		jwtTokenCache.Get(tokenStr)
+		key, ok := jwtKeyCache.Get(true)
+		if !ok {
+			keyFilename := getEnv("ISUCON_JWT_KEY_FILE", "../public.pem")
+			keysrc, err := os.ReadFile(keyFilename)
+			if err != nil {
+				return nil, fmt.Errorf("error os.ReadFile: keyFilename=%s: %w", keyFilename, err)
+			}
+			key, _, err = jwk.DecodePEM(keysrc)
+			if err != nil {
+				return nil, fmt.Errorf("error jwk.DecodePEM: %w", err)
+			}
+
+			jwtKeyCache.Set(true, key)
+		}
+
+		token, err := jwt.Parse(
+			[]byte(tokenStr),
+			jwt.WithKey(jwa.RS256, key),
 		)
+		if err != nil {
+			return nil, echo.NewHTTPError(http.StatusUnauthorized, fmt.Errorf("error jwt.Parse: %s", err.Error()))
+		}
+		if subject = token.Subject(); subject == "" {
+			return nil, echo.NewHTTPError(
+				http.StatusUnauthorized,
+				fmt.Sprintf("invalid token: subject is not found in token: %s", tokenStr),
+			)
+		}
+
+		tr, ok := token.Get("role")
+		if !ok {
+			return nil, echo.NewHTTPError(
+				http.StatusUnauthorized,
+				fmt.Sprintf("invalid token: role is not found: %s", tokenStr),
+			)
+		}
+		switch tr {
+		case RoleAdmin, RoleOrganizer, RolePlayer:
+			role = tr.(string)
+		default:
+			return nil, echo.NewHTTPError(
+				http.StatusUnauthorized,
+				fmt.Sprintf("invalid token: invalid role: %s", tokenStr),
+			)
+		}
+		// aud は1要素でテナント名がはいっている
+		aud = token.Audience()
+		if len(aud) != 1 {
+			return nil, echo.NewHTTPError(
+				http.StatusUnauthorized,
+				fmt.Sprintf("invalid token: aud field is few or too much: %s", tokenStr),
+			)
+		}
+
+		jwtTokenCache.Set(tokenStr, TokenData{
+			subject: subject,
+			role:    role,
+			aud:     aud,
+		})
+	} else {
+		subject, role, aud = tokenData.subject, tokenData.role, tokenData.aud
 	}
-	switch tr {
-	case RoleAdmin, RoleOrganizer, RolePlayer:
-		role = tr.(string)
-	default:
-		return nil, echo.NewHTTPError(
-			http.StatusUnauthorized,
-			fmt.Sprintf("invalid token: invalid role: %s", tokenStr),
-		)
-	}
-	// aud は1要素でテナント名がはいっている
-	aud := token.Audience()
-	if len(aud) != 1 {
-		return nil, echo.NewHTTPError(
-			http.StatusUnauthorized,
-			fmt.Sprintf("invalid token: aud field is few or too much: %s", tokenStr),
-		)
-	}
+
 	tenant, err := retrieveTenantRowFromHeader(c)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -311,7 +341,7 @@ func parseViewer(c echo.Context) (*Viewer, error) {
 
 	v := &Viewer{
 		role:       role,
-		playerID:   token.Subject(),
+		playerID:   subject,
 		tenantName: tenant.Name,
 		tenantID:   tenant.ID,
 	}
