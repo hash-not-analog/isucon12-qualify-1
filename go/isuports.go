@@ -514,6 +514,7 @@ func initializeHandler(c echo.Context) error {
 	jwtTokenCache.Reset()
 	playerCache.Reset()
 	competitionCache.Reset()
+	tenantCache.Reset()
 
 	go dispenseUpdate()
 

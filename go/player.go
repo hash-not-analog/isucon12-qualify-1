@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/labstack/echo/v4"
+	"github.com/logica0419/helpisu"
 )
 
 type PlayerScoreDetail struct {
@@ -146,6 +147,8 @@ type CompetitionRankingHandlerResult struct {
 	Ranks       []CompetitionRank `json:"ranks"`
 }
 
+var tenantCache = helpisu.NewCache[int64, struct{}]()
+
 // 参加者向けAPI
 // GET /api/player/competition/:competition_id/ranking
 // 大会ごとのランキングを取得する
@@ -184,8 +187,13 @@ func competitionRankingHandler(c echo.Context) error {
 
 	now := time.Now().Unix()
 	var tenant TenantRow
-	if err := adminDB.GetContext(ctx, &tenant, "SELECT * FROM tenant WHERE id = ?", v.tenantID); err != nil {
-		return fmt.Errorf("error Select tenant: id=%d, %w", v.tenantID, err)
+	_, ok := tenantCache.Get(v.tenantID)
+	if !ok {
+		if err := adminDB.GetContext(ctx, &tenant, "SELECT id FROM tenant WHERE id = ?", v.tenantID); err != nil {
+			return fmt.Errorf("error Select tenant: id=%d, %w", v.tenantID, err)
+		}
+	} else {
+		tenant.ID = v.tenantID
 	}
 
 	if _, err := adminDB.ExecContext(
