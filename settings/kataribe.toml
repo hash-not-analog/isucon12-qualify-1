@@ -120,8 +120,8 @@ regexp = '^(GET) /api/player/competition/[0-9a-z]*/ranking'
 name = 'GET /api/player/competition/:competition_id/ranking'
 
 [[bundle]]
-regexp = '^(GET) /api/admin/tenants/billing?before=[0-9]*'
-name = 'GET /api/player/competition/:competition_id/ranking'
+regexp = '^(GET) /api/admin/tenants/billing\?before=[0-9]*'
+name = 'GET /api/admin/tenants/billing?before='
 
 ################################################################################
 # Replace
