@@ -121,9 +121,7 @@ func dispenseUpdate() {
 	t := time.NewTicker(90 * time.Second)
 	defer t.Stop()
 	<-t.C
-	go func() {
-		adminDB.Exec("UPDATE id_generator SET id = ?, stub=?;", curId, "a")
-	}()
+	adminDB.Exec("UPDATE id_generator SET id = ?, stub=?;", curId, "a")
 }
 
 // 全APIにCache-Control: privateを設定する
@@ -495,9 +493,6 @@ func initializeHandler(c echo.Context) error {
 	out, err := exec.Command(initializeScript).CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("error exec.Command: %s %e", string(out), err)
-	}
-	res := InitializeHandlerResult{
-		Lang: "go",
 	}
 
 	for i := 0; i < 100; i++ {
