@@ -1,5 +1,7 @@
 DROP TABLE IF EXISTS competition;
+
 DROP TABLE IF EXISTS player;
+
 DROP TABLE IF EXISTS player_score;
 
 CREATE TABLE competition (
@@ -28,5 +30,6 @@ CREATE TABLE player_score (
   score BIGINT NOT NULL,
   row_num BIGINT NOT NULL,
   created_at BIGINT NOT NULL,
-  updated_at BIGINT NOT NULL
+  updated_at BIGINT NOT NULL,
+  INDEX tenant_player_idx (tenant_id, player_id)
 );
