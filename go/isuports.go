@@ -13,6 +13,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/go-sql-driver/mysql"
 	"github.com/gofrs/flock"
@@ -45,6 +47,8 @@ var (
 
 	sqliteDriverName = "sqlite3"
 	tenantDBs        = helpisu.NewCache[int64, *sqlx.DB]()
+	dispenseMu       = sync.Mutex{}
+	curId            = int64(-1)
 )
 
 // 環境変数を取得する、なければデフォルト値を返す
@@ -107,28 +111,20 @@ func createTenantDB(id int64) error {
 // システム全体で一意なIDを生成する
 // これMutexと加算で置き換えられる
 func dispenseID(ctx context.Context) (string, error) {
-	var id int64
-	var lastErr error
-	for i := 0; i < 100; i++ {
-		var ret sql.Result
-		ret, err := adminDB.ExecContext(ctx, "REPLACE INTO id_generator (stub) VALUES (?);", "a")
-		if err != nil {
-			if merr, ok := err.(*mysql.MySQLError); ok && merr.Number == 1213 { // deadlock
-				lastErr = fmt.Errorf("error REPLACE INTO id_generator: %w", err)
-				continue
-			}
-			return "", fmt.Errorf("error REPLACE INTO id_generator: %w", err)
-		}
-		id, err = ret.LastInsertId()
-		if err != nil {
-			return "", fmt.Errorf("error ret.LastInsertId: %w", err)
-		}
-		break
+	if curId == -1 {
+		adminDB.Get(curId, "SELECT id FROM id_generator WHERE stub='a';")
 	}
-	if id != 0 {
-		return fmt.Sprintf("%x", id), nil
-	}
-	return "", lastErr
+	dispenseMu.Lock()
+	curId += 1
+	dispenseMu.Unlock()
+	return fmt.Sprintf("%x", curId), nil
+}
+
+func dispenseUpdate() {
+	t := time.NewTicker(90 * time.Second)
+	defer t.Stop()
+	<-t.C
+	adminDB.Exec("UPDATE id_generator SET id = ?, stub=?;", curId, "a")
 }
 
 // 全APIにCache-Control: privateを設定する
@@ -504,9 +500,6 @@ func initializeHandler(c echo.Context) error {
 	if err != nil {
 		return fmt.Errorf("error exec.Command: %s %e", string(out), err)
 	}
-	res := InitializeHandlerResult{
-		Lang: "go",
-	}
 
 	for i := 0; i < tenantNum; i++ {
 		tenantDB, ok := tenantDBs.Get(int64(i))
@@ -539,5 +532,10 @@ func initializeHandler(c echo.Context) error {
 		}
 	}
 
+	go dispenseUpdate()
+
+	res := InitializeHandlerResult{
+		Lang: "go",
+	}
 	return c.JSON(http.StatusOK, SuccessResult{Status: true, Data: res})
 }
