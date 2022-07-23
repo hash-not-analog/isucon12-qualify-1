@@ -215,12 +215,21 @@ func tenantsBillingHandler(c echo.Context) error {
 	currentCompID = ""
 
 	// ランキングにアクセスした参加者のIDを取得する
+	tenantIDs := make([]int64, 0, len(tenantBillings))
+	for i := range tenantBillings {
+		tenantIDs = append(tenantIDs, tenantBillings[i].tenantID)
+	}
+
+	query, params, err := sqlx.In(
+		"SELECT player_id, MIN(created_at) AS min_created_at, competition_id, tenant_id FROM visit_history WHERE tenant_id IN (?) GROUP BY player_id, competition_id, tenant_id",
+		tenantIDs,
+	)
+	if err != nil {
+		return fmt.Errorf("error Select visit_history. %w", err)
+	}
+
 	vhs := []VisitHistorySummaryRow{}
-	if err := adminDB.SelectContext(
-		ctx,
-		&vhs,
-		"SELECT player_id, MIN(created_at) AS min_created_at, competition_id, tenant_id FROM visit_history GROUP BY player_id, competition_id, tenant_id",
-	); err != nil && err != sql.ErrNoRows {
+	if err := adminDB.SelectContext(ctx, &vhs, query, params...); err != nil && err != sql.ErrNoRows {
 		return fmt.Errorf("error Select visit_history. %w", err)
 	}
 	var currentTenantID int64 = -1
@@ -229,9 +238,6 @@ func tenantsBillingHandler(c echo.Context) error {
 		var tenantDB *sqlx.DB
 		var index int
 		if currentTenantID != vh.TenantID {
-			currentTenantID = vh.TenantID
-			tenantDB, _ = connectToTenantDB(vh.TenantID)
-
 			found := false
 			for i := range tenantBillings {
 				if tenantBillings[i].tenantID == currentTenantID {
@@ -244,6 +250,9 @@ func tenantsBillingHandler(c echo.Context) error {
 			if !found {
 				continue
 			}
+
+			currentTenantID = vh.TenantID
+			tenantDB, _ = connectToTenantDB(vh.TenantID)
 		}
 
 		if beforeID != 0 && beforeID <= currentTenantID {
