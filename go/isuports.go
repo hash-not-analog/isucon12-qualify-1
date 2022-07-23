@@ -47,7 +47,7 @@ var (
 	sqliteDriverName = "sqlite3"
 	tenantDBs        = helpisu.NewCache[int64, *sqlx.DB]()
 	dispenseMu       = sync.Mutex{}
-	curId            = 0
+	curId            = -1
 )
 
 // 環境変数を取得する、なければデフォルト値を返す
@@ -106,11 +106,13 @@ func createTenantDB(id int64) error {
 // システム全体で一意なIDを生成する
 // これMutexと加算で置き換えられる
 func dispenseID(ctx context.Context) (string, error) {
-	res := fmt.Sprintf("%x", curId)
+	if curId == -1 {
+		adminDB.Get(curId, "SELECT COUNT(*) FROM id_generator;")
+	}
 	dispenseMu.Lock()
 	curId += 1
 	dispenseMu.Unlock()
-	return res, nil
+	return fmt.Sprintf("%x", curId), nil
 }
 
 // 全APIにCache-Control: privateを設定する
