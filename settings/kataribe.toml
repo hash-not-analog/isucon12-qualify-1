@@ -99,30 +99,6 @@ duration_index = 10
 #regexp = '^(GET|HEAD) /images/'
 #name = 'GET /images/*'
 
-[[bundle]]
-regexp = '^(POST) /api/organizer/player/[0-9a-z]*/disqualified'
-name = 'POST /api/organizer/player/:player_id/disqualified'
-
-[[bundle]]
-regexp = '^(POST) /api/organizer/competition/[0-9a-z]*/finish'
-name = 'POST /api/organizer/competition/:competition_id/finish'
-
-[[bundle]]
-regexp = '^(POST) /api/organizer/competition/[0-9a-z]*/score'
-name = 'POST /api/organizer/competition/:competition_id/score'
-
-[[bundle]]
-regexp = '^(GET) /api/player/player/[0-9a-z]*'
-name = 'GET /api/player/player/:player_id'
-
-[[bundle]]
-regexp = '^(GET) /api/player/competition/[0-9a-z]*/ranking'
-name = 'GET /api/player/competition/:competition_id/ranking'
-
-[[bundle]]
-regexp = '^(GET) /api/admin/tenants/billing\?before=[0-9]*'
-name = 'GET /api/admin/tenants/billing?before='
-
 ################################################################################
 # Replace
 ################################################################################
