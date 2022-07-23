@@ -151,8 +151,10 @@ func tenantsBillingHandler(c echo.Context) error {
 	// player_scoreを読んでいるときに更新が走ると不整合が起こるのでロックを取得する
 	billingMap := map[string]string{}
 
-	var tenants = make([]TenantRow, 0, 200)
+	tenants := make([]TenantRow, 0, 200)
 	adminDB.GetContext(c.Request().Context(), &tenants, "SELECT * FROM tenant ORDER BY id DESC") // }
+
+	log.Println("tenantBillings:", len(tenants))
 
 	tenantBillings := make([]TenantWithBilling, 0, len(tenants))
 
