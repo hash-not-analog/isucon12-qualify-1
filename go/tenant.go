@@ -70,6 +70,18 @@ func competitionsAddHandler(c echo.Context) error {
 	return c.JSON(http.StatusOK, SuccessResult{Status: true, Data: res})
 }
 
+func delayedInsertCompetition() {
+	tenantDBs, _ := tenantDBCache.Get(0)
+	for id, tenantDB := range tenantDBs {
+		competitions, _ := competitionBuffer.Get(id)
+		_, _ = tenantDB.NamedExec(
+			"INSERT INTO competition (id, tenant_id, title, finished_at, created_at, updated_at) VALUES (:id, :tenant_id, :title, :finished_at, :created_at, :updated_at)", competitions,
+		)
+		competitions = make([]CompetitionRow, 0, 100)
+		competitionBuffer.Set(id, competitions)
+	}
+}
+
 // テナント管理者向けAPI
 // POST /api/organizer/competition/:competition_id/finish
 // 大会を終了する

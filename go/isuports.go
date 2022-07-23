@@ -46,7 +46,7 @@ var (
 	adminDB *sqlx.DB
 
 	sqliteDriverName = "sqlite3"
-	tenantDBCache    = helpisu.NewCache[int64, *sqlx.DB]()
+	tenantDBCache    = helpisu.NewCache[int, map[int64]*sqlx.DB]()
 	dispenseMu       = sync.Mutex{}
 	curId            = int64(-1)
 )
@@ -81,7 +81,8 @@ func tenantDBPath(id int64) string {
 
 // テナントDBに接続する
 func connectToTenantDB(id int64) (*sqlx.DB, error) {
-	tenantDB, ok := tenantDBCache.Get(id)
+	tenantDBs, _ := tenantDBCache.Get(0)
+	tenantDB, ok := tenantDBs[id]
 	if ok {
 		return tenantDB, nil
 	}
@@ -90,13 +91,16 @@ func connectToTenantDB(id int64) (*sqlx.DB, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to open tenant DB: %w", err)
 	}
-	tenantDBCache.Set(id, db)
+	tenantDBs[id] = db
+	tenantDBCache.Set(0, tenantDBs)
 	return db, nil
 }
 
 // テナントDBを新規に作成する
 func createTenantDB(id int64) error {
-	if _, ok := tenantDBCache.Get(id); ok {
+	tenantDBs, _ := tenantDBCache.Get(0)
+	_, ok := tenantDBs[id]
+	if ok {
 		return nil
 	}
 
@@ -105,6 +109,13 @@ func createTenantDB(id int64) error {
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("failed to exec sqlite3 %s < %s, out=%s: %w", p, tenantDBSchemaFilePath, string(out), err)
 	}
+
+	db, err := sqlx.Open(sqliteDriverName, fmt.Sprintf("file:%s?mode=rw", p))
+	if err != nil {
+		return fmt.Errorf("failed to open tenant DB: %w", err)
+	}
+	tenantDBs[id] = db
+	tenantDBCache.Set(0, tenantDBs)
 	return nil
 }
 
@@ -504,11 +515,9 @@ func initializeHandler(c echo.Context) error {
 		return fmt.Errorf("error exec.Command: %s %e", string(out), err)
 	}
 
-	for i := 1; i < tenantNum; i++ {
-		tenantDB, ok := tenantDBCache.Get(int64(i))
-		if ok {
-			tenantDB.Close()
-		}
+	tenantDBs, _ := tenantDBCache.Get(0)
+	for _, tenantDB := range tenantDBs {
+		tenantDB.Close()
 	}
 
 	tenantDBCache.Reset()
@@ -518,11 +527,18 @@ func initializeHandler(c echo.Context) error {
 	competitionCache.Reset()
 	tenantCache.Reset()
 
+	tenantDBs = map[int64]*sqlx.DB{}
+	tenantDBCache.Set(0, tenantDBs)
+
 	go dispenseUpdate()
 
 	visitHistories.Set(0, make([]VisitHistoryRow, 0, 100))
 	insertVisitHistory := helpisu.NewTicker(2000, delayedInsertVisitHistory)
 	go insertVisitHistory.Start()
+
+	competitionBuffer.Set(0, make([]CompetitionRow, 0, 100))
+	insertCompetition := helpisu.NewTicker(2000, delayedInsertCompetition)
+	go insertCompetition.Start()
 
 	res := InitializeHandlerResult{
 		Lang: "go",
