@@ -92,8 +92,11 @@ func connectToTenantDB(id int64) (*sqlx.DB, error) {
 
 // テナントDBを新規に作成する
 func createTenantDB(id int64) error {
-	p := tenantDBPath(id)
+	if _, ok := tenantDBs.Get(id); !ok {
+		return nil
+	}
 
+	p := tenantDBPath(id)
 	cmd := exec.Command("sh", "-c", fmt.Sprintf("sqlite3 %s < %s", p, tenantDBSchemaFilePath))
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("failed to exec sqlite3 %s < %s, out=%s: %w", p, tenantDBSchemaFilePath, string(out), err)
@@ -494,6 +497,9 @@ type InitializeHandlerResult struct {
 // ベンチマーカーが起動したときに最初に呼ぶ
 // データベースの初期化などが実行されるため、スキーマを変更した場合などは適宜改変すること
 func initializeHandler(c echo.Context) error {
+	var tenantNum int
+	adminDB.GetContext(c.Request().Context(), &tenantNum, "SELECT count(*) FROM tenant")
+
 	out, err := exec.Command(initializeScript).CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("error exec.Command: %s %e", string(out), err)
@@ -502,17 +508,36 @@ func initializeHandler(c echo.Context) error {
 		Lang: "go",
 	}
 
-	for i := 0; i < 100; i++ {
+	for i := 0; i < tenantNum; i++ {
 		tenantDB, ok := tenantDBs.Get(int64(i))
 		if ok {
 			tenantDB.Close()
 		}
 	}
+
 	tenantDBs.Reset()
 	jwtKeyCache.Reset()
 	jwtTokenCache.Reset()
 	playerCache.Reset()
 	competitionCache.Reset()
+
+	for i := 0; i < tenantNum+10; i++ {
+		createTenantDB(int64(i))
+		tenantDB, _ := connectToTenantDB(int64(i))
+
+		var pls []PlayerRow
+		tenantDB.SelectContext(c.Request().Context(), &pls, "SELECT * FROM player")
+
+		for _, pl := range pls {
+			playerCache.Set(pl.ID, pl)
+		}
+
+		var cps []CompetitionRow
+		tenantDB.SelectContext(c.Request().Context(), &cps, "SELECT * FROM competition")
+		for _, cp := range cps {
+			competitionCache.Set(cp.ID, cp)
+		}
+	}
 
 	return c.JSON(http.StatusOK, SuccessResult{Status: true, Data: res})
 }
