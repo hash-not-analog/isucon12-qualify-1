@@ -38,7 +38,6 @@ CREATE TABLE player_score (
 CREATE INDEX tenant_player_idx ON player_score (tenant_id, player_id);
 
 CREATE INDEX tenant_player_competition_row_idx ON player_score (tenant_id, player_id, competition_id, row_num DESC);
-CREATE INDEX tenant_competition_row_idx ON player_score (tenant_id, competition_id, row_num DESC);
 
 CREATE INDEX tenant_competition_row_idx ON player_score (tenant_id, competition_id, row_num DESC);
 
