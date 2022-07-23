@@ -48,7 +48,7 @@ var (
 	sqliteDriverName = "sqlite3"
 	tenantDBs        = helpisu.NewCache[int64, *sqlx.DB]()
 	dispenseMu       = sync.Mutex{}
-	curId            = -1
+	curId            = int64(-1)
 )
 
 // 環境変数を取得する、なければデフォルト値を返す
@@ -117,7 +117,7 @@ func dispenseID(ctx context.Context) (string, error) {
 }
 
 func dispenseUpdate() {
-	t := time.NewTicker(65 * time.Second)
+	t := time.NewTicker(90 * time.Second)
 	defer t.Stop()
 	<-t.C
 	go func() {
@@ -193,8 +193,6 @@ func Run() {
 	}
 	adminDB.SetMaxOpenConns(10)
 	defer adminDB.Close()
-
-	go dispenseUpdate()
 
 	go http.ListenAndServe(":6060", nil)
 
@@ -454,6 +452,11 @@ type InitializeHandlerResult struct {
 // ベンチマーカーが起動したときに最初に呼ぶ
 // データベースの初期化などが実行されるため、スキーマを変更した場合などは適宜改変すること
 func initializeHandler(c echo.Context) error {
+	out, err := exec.Command(initializeScript).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("error exec.Command: %s %e", string(out), err)
+	}
+
 	for i := 0; i < 100; i++ {
 		tenantDB, ok := tenantDBs.Get(int64(i))
 		if ok {
@@ -462,10 +465,8 @@ func initializeHandler(c echo.Context) error {
 	}
 	tenantDBs.Reset()
 
-	out, err := exec.Command(initializeScript).CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("error exec.Command: %s %e", string(out), err)
-	}
+	go dispenseUpdate()
+
 	res := InitializeHandlerResult{
 		Lang: "go",
 	}
