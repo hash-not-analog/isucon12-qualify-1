@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"log"
 	"net/http"
 	"time"
 
@@ -67,15 +66,6 @@ type PlayersAddHandlerResult struct {
 	Players []PlayerDetail `json:"players"`
 }
 
-type Player struct {
-	Id             string `db:"id"`
-	TenantId       int64  `db:"tenant_id"`
-	DisplayName    string `db:"display_name"`
-	IsDisqualified bool   `db:"is_disqualified"`
-	CreatedAt      int64  `db:"created_at"`
-	UpdatedAt      int64  `db:"updated_at"`
-}
-
 // テナント管理者向けAPI
 // GET /api/organizer/players/add
 // テナントに参加者を追加する
@@ -101,7 +91,7 @@ func playersAddHandler(c echo.Context) error {
 
 	pds := make([]PlayerDetail, 0, len(displayNames))
 
-	players := make([]Player, len(displayNames))
+	players := make([]PlayerRow, len(displayNames))
 	for _, displayName := range displayNames {
 		id, err := dispenseID(ctx)
 		if err != nil {
@@ -109,7 +99,7 @@ func playersAddHandler(c echo.Context) error {
 		}
 
 		now := time.Now().Unix()
-		players = append(players, Player{id, v.tenantID, displayName, false, now, now})
+		players = append(players, PlayerRow{v.tenantID, id, displayName, false, now, now})
 
 		pds = append(pds, PlayerDetail{
 			ID:             id,
@@ -118,11 +108,7 @@ func playersAddHandler(c echo.Context) error {
 		})
 	}
 
-	_, err = tenantDB.NamedExec("INSERT INTO player (id, tenant_id, display_name, is_disqualified, created_at, updated_at) values (:id, :tenant_id, :display_name, :is_disqualifies, :created_at, :updated_at)", players)
-	if err != nil {
-		log.Fatalln(err)
-	}
-
+	_, err = tenantDB.NamedExec("INSERT INTO player (id, tenant_id, display_name, is_disqualified, created_at, updated_at) values (:id, :tenant_id, :display_name, :is_disqualified, :created_at, :updated_at)", players)
 	if err != nil {
 		return fmt.Errorf(
 			"error Insert player at tenantDB: %w",
