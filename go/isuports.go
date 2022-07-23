@@ -409,7 +409,7 @@ var playerCache = helpisu.NewCache[string, PlayerRow]()
 // 参加者を取得する
 func retrievePlayer(ctx context.Context, tenantDB dbOrTx, id string) (*PlayerRow, error) {
 	p, ok := playerCache.Get(id)
-	if ok {
+	if !ok {
 		if err := tenantDB.GetContext(ctx, &p, "SELECT * FROM player WHERE id = ?", id); err != nil {
 			return nil, fmt.Errorf("error Select player: id=%s, %w", id, err)
 		}
@@ -447,7 +447,7 @@ var competitionCache = helpisu.NewCache[string, CompetitionRow]()
 // 大会を取得する
 func retrieveCompetition(ctx context.Context, tenantDB dbOrTx, id string) (*CompetitionRow, error) {
 	c, ok := competitionCache.Get(id)
-	if ok {
+	if !ok {
 		if err := tenantDB.GetContext(ctx, &c, "SELECT * FROM competition WHERE id = ?", id); err != nil {
 			return nil, fmt.Errorf("error Select competition: id=%s, %w", id, err)
 		}
