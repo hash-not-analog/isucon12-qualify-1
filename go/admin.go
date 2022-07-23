@@ -190,7 +190,8 @@ func tenantsBillingHandler(c echo.Context) error {
 		if err := tenantDB.SelectContext(
 			ctx,
 			&scoredPlayers,
-			"SELECT DISTINCT(player_id) as pid, competition_id FROM player_score ORDER BY competition_id",
+			"SELECT DISTINCT(player_id) as pid, competition_id WHERE tenant_id = ? FROM player_score ORDER BY competition_id",
+			tenantBillings[i].tenantID,
 		); err != nil && err != sql.ErrNoRows {
 			return fmt.Errorf("error Select count player_score: %w", err)
 		}
@@ -214,7 +215,8 @@ func tenantsBillingHandler(c echo.Context) error {
 		vhs := []VisitHistorySummaryRow{}
 		if err := adminDB.SelectContext(ctx, &vhs,
 			"SELECT player_id, MIN(created_at) AS min_created_at, competition_id FROM visit_history "+
-				"WHERE tenant_id = ? GROUP BY player_id, competition_id ORDER BY competition_id, min_created_at", tenantBillings[i].tenantID,
+				"WHERE tenant_id = ? GROUP BY player_id, competition_id ORDER BY competition_id",
+			tenantBillings[i].tenantID,
 		); err != nil && err != sql.ErrNoRows {
 			return fmt.Errorf("error Select visit_history. %w", err)
 		}
@@ -229,15 +231,13 @@ func tenantsBillingHandler(c echo.Context) error {
 				continue
 			}
 
-			if comp.FinishedAt.Valid {
-				// competition.finished_atよりもあとの場合は、終了後に訪問したとみなして大会開催内アクセス済みとみなさない
-				if comp.FinishedAt.Int64 < vhs[j].MinCreatedAt {
-					continue
-				}
+			// competition.finished_atよりもあとの場合は、終了後に訪問したとみなして大会開催内アクセス済みとみなさない
+			if comp.FinishedAt.Int64 < vhs[j].MinCreatedAt {
+				continue
+			}
 
-				if billingMap[vhs[j].PlayerID] != "player" {
-					tenantBillings[i].BillingYen += 10
-				}
+			if billingMap[vhs[j].PlayerID] != "player" {
+				tenantBillings[i].BillingYen += 10
 			}
 		}
 
