@@ -44,7 +44,7 @@ var (
 	adminDB *sqlx.DB
 
 	sqliteDriverName = "sqlite3"
-	tenantDBs        = *helpisu.Cache[int, *sqlx.DB]
+	tenantDBs        = helpisu.NewCache[int64, *sqlx.DB]()
 )
 
 // 環境変数を取得する、なければデフォルト値を返す
@@ -195,8 +195,6 @@ func Run() {
 	}
 	adminDB.SetMaxOpenConns(10)
 	defer adminDB.Close()
-
-	tenantDBs = helpisu.NewCache[int, *sqlx.DB]()
 
 	go http.ListenAndServe(":6060", nil)
 
@@ -456,6 +454,8 @@ type InitializeHandlerResult struct {
 // ベンチマーカーが起動したときに最初に呼ぶ
 // データベースの初期化などが実行されるため、スキーマを変更した場合などは適宜改変すること
 func initializeHandler(c echo.Context) error {
+	tenantDBs.Reset()
+
 	out, err := exec.Command(initializeScript).CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("error exec.Command: %s %e", string(out), err)
