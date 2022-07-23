@@ -152,9 +152,10 @@ func tenantsBillingHandler(c echo.Context) error {
 	billingMap := map[string]string{}
 
 	tenants := make([]TenantRow, 0, 200)
-	adminDB.GetContext(c.Request().Context(), &tenants, "SELECT * FROM tenant ORDER BY id DESC") // }
-
-	log.Println("tenantBillings:", len(tenants))
+	err := adminDB.SelectContext(c.Request().Context(), &tenants, "SELECT * FROM tenant ORDER BY id DESC") // }
+	if err != nil {
+		return fmt.Errorf("error Select tenant: %w", err)
+	}
 
 	tenantBillings := make([]TenantWithBilling, 0, len(tenants))
 
@@ -175,8 +176,6 @@ func tenantsBillingHandler(c echo.Context) error {
 			break
 		}
 	}
-
-	log.Println("tenantBillings:", len(tenantBillings))
 
 	currentCompID := ""
 
