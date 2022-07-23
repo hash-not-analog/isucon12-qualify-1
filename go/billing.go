@@ -34,12 +34,24 @@ type VisitHistorySummaryRow struct {
 }
 
 var vhsCache = helpisu.NewCache[int64, []VisitHistorySummaryRow]()
+var scoredPlayerCache = helpisu.NewCache[int64, []ScoredPlayer]()
 
 // 大会ごとの課金レポートを計算する
 func billingReportByCompetition(ctx context.Context, tenantDB dbOrTx, tenantID int64, competitionID string) (*BillingReport, error) {
 	comp, err := retrieveCompetition(ctx, tenantDB, competitionID)
 	if err != nil {
 		return nil, fmt.Errorf("error retrieveCompetition: %w", err)
+	}
+	if !comp.FinishedAt.Valid {
+		return &BillingReport{
+			CompetitionID:     comp.ID,
+			CompetitionTitle:  comp.Title,
+			PlayerCount:       0,
+			VisitorCount:      0,
+			BillingPlayerYen:  0, // スコアを登録した参加者は100円
+			BillingVisitorYen: 0, // ランキングを閲覧だけした(スコアを登録していない)参加者は10円
+			BillingYen:        0,
+		}, nil
 	}
 
 	// ランキングにアクセスした参加者のIDを取得する
@@ -76,30 +88,30 @@ func billingReportByCompetition(ctx context.Context, tenantDB dbOrTx, tenantID i
 	defer fl.Close()
 
 	// スコアを登録した参加者のIDを取得する
-	scoredPlayerIDs := []string{}
-	if err := tenantDB.SelectContext(
-		ctx,
-		&scoredPlayerIDs,
-		"SELECT DISTINCT(player_id) FROM player_score WHERE tenant_id = ? AND competition_id = ?",
-		tenantID, comp.ID,
-	); err != nil && err != sql.ErrNoRows {
-		return nil, fmt.Errorf("error Select count player_score: tenantID=%d, competitionID=%s, %w", tenantID, competitionID, err)
+	scoredPlayers, ok := scoredPlayerCache.Get(tenantID)
+	if !ok {
+		if err := tenantDB.SelectContext(
+			ctx,
+			&scoredPlayers,
+			"SELECT DISTINCT(player_id) AS pid, competition_id FROM player_score WHERE tenant_id = ?",
+			tenantID, comp.ID,
+		); err != nil && err != sql.ErrNoRows {
+			return nil, fmt.Errorf("error Select count player_score: tenantID=%d, competitionID=%s, %w", tenantID, competitionID, err)
+		}
 	}
-	for _, pid := range scoredPlayerIDs {
+	for i := range scoredPlayers {
 		// スコアが登録されている参加者
-		billingMap[pid] = "player"
+		billingMap[scoredPlayers[i].ID] = "player"
 	}
 
 	// 大会が終了している場合のみ請求金額が確定するので計算する
 	var playerCount, visitorCount int64
-	if comp.FinishedAt.Valid {
-		for _, category := range billingMap {
-			switch category {
-			case "player":
-				playerCount++
-			case "visitor":
-				visitorCount++
-			}
+	for _, category := range billingMap {
+		switch category {
+		case "player":
+			playerCount++
+		case "visitor":
+			visitorCount++
 		}
 	}
 	return &BillingReport{

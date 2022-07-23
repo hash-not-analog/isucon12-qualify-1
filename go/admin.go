@@ -99,7 +99,7 @@ type TenantsBillingHandlerResult struct {
 	Tenants []TenantWithBilling `json:"tenants"`
 }
 
-type scoredPlayer struct {
+type ScoredPlayer struct {
 	ID            string `db:"pid"`
 	CompetitionID string `db:"competition_id"`
 }
