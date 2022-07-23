@@ -328,6 +328,9 @@ func tenantsBillingHandler(c echo.Context) error {
 			break
 		}
 	}
+
+	vhsCache.Reset()
+
 	return c.JSON(http.StatusOK, SuccessResult{
 		Status: true,
 		Data: TenantsBillingHandlerResult{
