@@ -484,5 +484,9 @@ func initializeHandler(c echo.Context) error {
 	res := InitializeHandlerResult{
 		Lang: "go",
 	}
+
+	jwtKeyCache.Reset()
+	jwtTokenCache.Reset()
+
 	return c.JSON(http.StatusOK, SuccessResult{Status: true, Data: res})
 }
