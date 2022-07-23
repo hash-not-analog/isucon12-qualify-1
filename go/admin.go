@@ -232,11 +232,17 @@ func tenantsBillingHandler(c echo.Context) error {
 			currentTenantID = vh.TenantID
 			tenantDB, _ = connectToTenantDB(vh.TenantID)
 
+			found := false
 			for i := range tenantBillings {
 				if tenantBillings[i].tenantID == currentTenantID {
 					index = i
+					found = true
 					break
 				}
+			}
+
+			if !found {
+				continue
 			}
 		}
 
