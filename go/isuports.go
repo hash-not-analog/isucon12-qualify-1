@@ -46,7 +46,7 @@ var (
 	adminDB *sqlx.DB
 
 	sqliteDriverName = "sqlite3"
-	tenantDBs        = helpisu.NewCache[int64, *sqlx.DB]()
+	tenantDBCache    = helpisu.NewCache[int64, *sqlx.DB]()
 	dispenseMu       = sync.Mutex{}
 	curId            = int64(-1)
 )
@@ -81,7 +81,7 @@ func tenantDBPath(id int64) string {
 
 // テナントDBに接続する
 func connectToTenantDB(id int64) (*sqlx.DB, error) {
-	tenantDB, ok := tenantDBs.Get(id)
+	tenantDB, ok := tenantDBCache.Get(id)
 	if ok {
 		return tenantDB, nil
 	}
@@ -90,13 +90,13 @@ func connectToTenantDB(id int64) (*sqlx.DB, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to open tenant DB: %w", err)
 	}
-	tenantDBs.Set(id, db)
+	tenantDBCache.Set(id, db)
 	return db, nil
 }
 
 // テナントDBを新規に作成する
 func createTenantDB(id int64) error {
-	if _, ok := tenantDBs.Get(id); ok {
+	if _, ok := tenantDBCache.Get(id); ok {
 		return nil
 	}
 
@@ -503,13 +503,13 @@ func initializeHandler(c echo.Context) error {
 	}
 
 	for i := 1; i < tenantNum; i++ {
-		tenantDB, ok := tenantDBs.Get(int64(i))
+		tenantDB, ok := tenantDBCache.Get(int64(i))
 		if ok {
 			tenantDB.Close()
 		}
 	}
 
-	tenantDBs.Reset()
+	tenantDBCache.Reset()
 	jwtKeyCache.Reset()
 	jwtTokenCache.Reset()
 	playerCache.Reset()
