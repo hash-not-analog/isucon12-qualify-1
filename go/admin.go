@@ -199,10 +199,10 @@ func tenantsBillingHandler(c echo.Context) error {
 			return fmt.Errorf("error Select count player_score: %w", err)
 		}
 
-		for i := range scoredPlayers {
+		for j := range scoredPlayers {
 			var comp *CompetitionRow
-			if currentCompID != scoredPlayers[i].CompetitionID {
-				currentCompID = scoredPlayers[i].CompetitionID
+			if currentCompID != scoredPlayers[j].CompetitionID {
+				currentCompID = scoredPlayers[j].CompetitionID
 				comp, _ = retrieveCompetition(ctx, tenantDB, currentCompID)
 			}
 
@@ -211,7 +211,7 @@ func tenantsBillingHandler(c echo.Context) error {
 			}
 
 			// スコアが登録されている参加者
-			billingMap[scoredPlayers[i].ID] = "player"
+			billingMap[scoredPlayers[j].ID] = "player"
 			tenantBillings[i].BillingYen += 100
 		}
 	}
