@@ -14,6 +14,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/go-sql-driver/mysql"
 	"github.com/gofrs/flock"
@@ -115,6 +116,15 @@ func dispenseID(ctx context.Context) (string, error) {
 	return fmt.Sprintf("%x", curId), nil
 }
 
+func dispenseUpdate() {
+	t := time.NewTicker(65 * time.Second)
+	defer t.Stop()
+	<-t.C
+	go func() {
+		adminDB.Exec("UPDATE id_generator SET id = ?, stub=?;", curId, "a")
+	}()
+}
+
 // 全APIにCache-Control: privateを設定する
 func SetCacheControlPrivate(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c echo.Context) error {
@@ -183,6 +193,8 @@ func Run() {
 	}
 	adminDB.SetMaxOpenConns(10)
 	defer adminDB.Close()
+
+	go dispenseUpdate()
 
 	go http.ListenAndServe(":6060", nil)
 
