@@ -516,24 +516,6 @@ func initializeHandler(c echo.Context) error {
 	competitionCache.Reset()
 	tenantCache.Reset()
 
-	for i := 0; i < tenantNum; i++ {
-		createTenantDB(int64(i))
-		tenantDB, _ := connectToTenantDB(int64(i))
-
-		var pls []PlayerRow
-		tenantDB.SelectContext(c.Request().Context(), &pls, "SELECT * FROM player")
-
-		for _, pl := range pls {
-			playerCache.Set(pl.ID, pl)
-		}
-
-		var cps []CompetitionRow
-		tenantDB.SelectContext(c.Request().Context(), &cps, "SELECT * FROM competition")
-		for _, cp := range cps {
-			competitionCache.Set(cp.ID, cp)
-		}
-	}
-
 	go dispenseUpdate()
 
 	res := InitializeHandlerResult{
