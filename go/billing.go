@@ -36,14 +36,21 @@ type VisitHistorySummaryRow struct {
 var vhsCache = helpisu.NewCache[int64, []VisitHistorySummaryRow]()
 var scoredPlayerCache = helpisu.NewCache[int64, []ScoredPlayer]()
 
+var billingReportCache = helpisu.NewCache[string, BillingReport]()
+
 // 大会ごとの課金レポートを計算する
 func billingReportByCompetition(ctx context.Context, tenantDB dbOrTx, tenantID int64, competitionID string) (*BillingReport, error) {
+	billingReport, ok := billingReportCache.Get(competitionID)
+	if ok {
+		return &billingReport, nil
+	}
+
 	comp, err := retrieveCompetition(ctx, tenantDB, competitionID)
 	if err != nil {
 		return nil, fmt.Errorf("error retrieveCompetition: %w", err)
 	}
 	if !comp.FinishedAt.Valid {
-		return &BillingReport{
+		billingReport = BillingReport{
 			CompetitionID:     comp.ID,
 			CompetitionTitle:  comp.Title,
 			PlayerCount:       0,
@@ -51,7 +58,11 @@ func billingReportByCompetition(ctx context.Context, tenantDB dbOrTx, tenantID i
 			BillingPlayerYen:  0, // スコアを登録した参加者は100円
 			BillingVisitorYen: 0, // ランキングを閲覧だけした(スコアを登録していない)参加者は10円
 			BillingYen:        0,
-		}, nil
+		}
+
+		billingReportCache.Set(competitionID, billingReport)
+
+		return &billingReport, nil
 	}
 
 	// ランキングにアクセスした参加者のIDを取得する
@@ -118,7 +129,8 @@ func billingReportByCompetition(ctx context.Context, tenantDB dbOrTx, tenantID i
 			visitorCount++
 		}
 	}
-	return &BillingReport{
+
+	billingReport = BillingReport{
 		CompetitionID:     comp.ID,
 		CompetitionTitle:  comp.Title,
 		PlayerCount:       playerCount,
@@ -126,5 +138,9 @@ func billingReportByCompetition(ctx context.Context, tenantDB dbOrTx, tenantID i
 		BillingPlayerYen:  100 * playerCount, // スコアを登録した参加者は100円
 		BillingVisitorYen: 10 * visitorCount, // ランキングを閲覧だけした(スコアを登録していない)参加者は10円
 		BillingYen:        100*playerCount + 10*visitorCount,
-	}, nil
+	}
+
+	billingReportCache.Set(competitionID, billingReport)
+
+	return &billingReport, nil
 }

@@ -515,12 +515,17 @@ func initializeHandler(c echo.Context) error {
 	playerCache.Reset()
 	competitionCache.Reset()
 	tenantCache.Reset()
+	compFinishCache.Reset()
+	billingReportCache.Reset()
 
 	go dispenseUpdate()
 
 	visitHistories.Set(0, make([]VisitHistoryRow, 0, 100))
 	insertVisitHistory := helpisu.NewTicker(2000, delayedInsertVisitHistory)
 	go insertVisitHistory.Start()
+
+	updateCompetitionFinish := helpisu.NewTicker(2000, updateCompetitionFinish)
+	go updateCompetitionFinish.Start()
 
 	res := InitializeHandlerResult{
 		Lang: "go",
