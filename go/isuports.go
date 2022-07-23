@@ -44,6 +44,7 @@ var (
 	adminDB *sqlx.DB
 
 	sqliteDriverName = "sqlite3"
+	tenantDBs        = helpisu.NewCache[int64, *sqlx.DB]()
 )
 
 // 環境変数を取得する、なければデフォルト値を返す
@@ -75,11 +76,16 @@ func tenantDBPath(id int64) string {
 
 // テナントDBに接続する
 func connectToTenantDB(id int64) (*sqlx.DB, error) {
+	tenantDB, ok := tenantDBs.Get(id)
+	if ok {
+		return tenantDB, nil
+	}
 	p := tenantDBPath(id)
 	db, err := sqlx.Open(sqliteDriverName, fmt.Sprintf("file:%s?mode=rw", p))
 	if err != nil {
 		return nil, fmt.Errorf("failed to open tenant DB: %w", err)
 	}
+	tenantDBs.Set(id, db)
 	return db, nil
 }
 
@@ -477,6 +483,8 @@ type InitializeHandlerResult struct {
 // ベンチマーカーが起動したときに最初に呼ぶ
 // データベースの初期化などが実行されるため、スキーマを変更した場合などは適宜改変すること
 func initializeHandler(c echo.Context) error {
+	tenantDBs.Reset()
+
 	out, err := exec.Command(initializeScript).CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("error exec.Command: %s %e", string(out), err)
