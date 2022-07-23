@@ -25,8 +25,10 @@ type VisitHistoryRow struct {
 }
 
 type VisitHistorySummaryRow struct {
-	PlayerID     string `db:"player_id"`
-	MinCreatedAt int64  `db:"min_created_at"`
+	PlayerID      string `db:"player_id"`
+	MinCreatedAt  int64  `db:"min_created_at"`
+	CompetitionID string `db:"competition_id"`
+	TenantID      int64  `db:"tenant_id"`
 }
 
 // 大会ごとの課金レポートを計算する
