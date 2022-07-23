@@ -532,6 +532,8 @@ func initializeHandler(c echo.Context) error {
 		}
 	}
 
+	visitHistories.Set(0, make([]VisitHistoryRow, 0, 100))
+
 	go dispenseUpdate()
 	insertVisitHistory := helpisu.NewTicker(2000, delayedInsertVisitHistory)
 	go insertVisitHistory.Start()

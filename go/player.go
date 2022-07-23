@@ -11,10 +11,11 @@ import (
 	"time"
 
 	"github.com/labstack/echo/v4"
+	"github.com/logica0419/helpisu"
 )
 
 var (
-	visitHistories = []VisitHistoryRow{}
+	visitHistories = helpisu.NewCache[int, []VisitHistoryRow]()
 )
 
 type PlayerScoreDetail struct {
@@ -192,7 +193,9 @@ func competitionRankingHandler(c echo.Context) error {
 		return fmt.Errorf("error Select tenant: id=%d, %w", v.tenantID, err)
 	}
 
-	visitHistories = append(visitHistories, VisitHistoryRow{v.playerID, tenant.ID, competitionID, now, now})
+	visitHistory, _ := visitHistories.Get(0)
+	visitHistory = append(visitHistory, VisitHistoryRow{v.playerID, tenant.ID, competitionID, now, now})
+	visitHistories.Set(0, visitHistory)
 
 	if _, err := adminDB.ExecContext(
 		ctx,
@@ -286,11 +289,13 @@ func competitionRankingHandler(c echo.Context) error {
 }
 
 func delayedInsertVisitHistory() {
+	visitHistory, _ := visitHistories.Get(0)
 	_, _ = adminDB.NamedExec(
 		"INSERT INTO visit_history (player_id, tenant_id, competition_id, created_at, updated_at) VALUES (:player_id, :tenant_id, :competition_id, :created_at, :updated_at)",
-		visitHistories,
+		visitHistory,
 	)
-	visitHistories = make([]VisitHistoryRow, 0, 100)
+	visitHistory = make([]VisitHistoryRow, 0, 100)
+	visitHistories.Set(0, visitHistory)
 }
 
 type CompetitionsHandlerResult struct {
