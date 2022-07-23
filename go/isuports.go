@@ -198,8 +198,6 @@ func Run() {
 
 	helpisu.WaitDBStartUp(adminDB.DB)
 
-	go http.ListenAndServe(":6060", nil)
-
 	port := getEnv("SERVER_APP_PORT", "3000")
 	e.Logger.Infof("starting isuports server on : %s ...", port)
 	serverPort := fmt.Sprintf(":%s", port)
