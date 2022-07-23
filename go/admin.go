@@ -4,13 +4,11 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"log"
 	"net/http"
 	"strconv"
 	"time"
 
 	"github.com/go-sql-driver/mysql"
-	"github.com/jmoiron/sqlx"
 	"github.com/labstack/echo/v4"
 )
 
@@ -187,8 +185,6 @@ func tenantsBillingHandler(c echo.Context) error {
 			return fmt.Errorf("error flockByTenantID: %w", err)
 		}
 
-		fl.Close()
-
 		// スコアを登録した参加者のIDを取得する
 		scoredPlayers := []scoredPlayer{}
 		if err := tenantDB.SelectContext(
@@ -199,8 +195,8 @@ func tenantsBillingHandler(c echo.Context) error {
 			return fmt.Errorf("error Select count player_score: %w", err)
 		}
 
+		var comp *CompetitionRow
 		for j := range scoredPlayers {
-			var comp *CompetitionRow
 			if currentCompID != scoredPlayers[j].CompetitionID {
 				currentCompID = scoredPlayers[j].CompetitionID
 				comp, _ = retrieveCompetition(ctx, tenantDB, currentCompID)
@@ -214,74 +210,38 @@ func tenantsBillingHandler(c echo.Context) error {
 			billingMap[scoredPlayers[j].ID] = "player"
 			tenantBillings[i].BillingYen += 100
 		}
-	}
 
-	currentCompID = ""
+		vhs := []VisitHistorySummaryRow{}
+		if err := adminDB.SelectContext(ctx, &vhs,
+			"SELECT player_id, MIN(created_at) AS min_created_at, competition_id FROM visit_history "+
+				"WHERE tenant_id = ? GROUP BY player_id, competition_id ORDER BY competition_id, min_created_at", tenantBillings[i].tenantID,
+		); err != nil && err != sql.ErrNoRows {
+			return fmt.Errorf("error Select visit_history. %w", err)
+		}
+		for j := range vhs {
+			var comp *CompetitionRow
+			if currentCompID != vhs[j].CompetitionID {
+				currentCompID = vhs[j].CompetitionID
+				comp, _ = retrieveCompetition(ctx, tenantDB, currentCompID)
+			}
 
-	// ランキングにアクセスした参加者のIDを取得する
-	tenantIDs := make([]int64, 0, len(tenantBillings))
-	for i := range tenantBillings {
-		tenantIDs = append(tenantIDs, tenantBillings[i].tenantID)
-	}
+			if comp == nil || !comp.FinishedAt.Valid {
+				continue
+			}
 
-	for i := range tenantIDs {
-		log.Println("tenantIDs:", tenantIDs[i])
-	}
+			if comp.FinishedAt.Valid {
+				// competition.finished_atよりもあとの場合は、終了後に訪問したとみなして大会開催内アクセス済みとみなさない
+				if comp.FinishedAt.Int64 < vhs[j].MinCreatedAt {
+					continue
+				}
 
-	query, params, err := sqlx.In(
-		"SELECT player_id, MIN(created_at) AS min_created_at, competition_id, tenant_id FROM visit_history WHERE tenant_id IN (?) GROUP BY player_id, competition_id, tenant_id",
-		tenantIDs,
-	)
-	if err != nil {
-		return fmt.Errorf("error Select visit_history. %w", err)
-	}
-
-	vhs := []VisitHistorySummaryRow{}
-	if err := adminDB.SelectContext(ctx, &vhs, query, params...); err != nil && err != sql.ErrNoRows {
-		return fmt.Errorf("error Select visit_history. %w", err)
-	}
-	var currentTenantID int64 = -1
-	var comp *CompetitionRow
-	for _, vh := range vhs {
-		var tenantDB *sqlx.DB
-		var index int
-		if currentTenantID != vh.TenantID {
-			found := false
-			for i := range tenantBillings {
-				if tenantBillings[i].tenantID == currentTenantID {
-					index = i
-					found = true
-					break
+				if billingMap[vhs[j].PlayerID] != "player" {
+					tenantBillings[i].BillingYen += 10
 				}
 			}
-
-			if !found {
-				continue
-			}
-
-			currentTenantID = vh.TenantID
-			tenantDB, _ = connectToTenantDB(vh.TenantID)
 		}
 
-		if beforeID != 0 && beforeID <= currentTenantID {
-			continue
-		}
-
-		if currentCompID != vh.CompetitionID {
-			currentCompID = vh.CompetitionID
-			comp, _ = retrieveCompetition(ctx, tenantDB, currentCompID)
-		}
-
-		if comp.FinishedAt.Valid {
-			// competition.finished_atよりもあとの場合は、終了後に訪問したとみなして大会開催内アクセス済みとみなさない
-			if comp.FinishedAt.Int64 < vh.MinCreatedAt {
-				continue
-			}
-
-			if billingMap[vh.PlayerID] != "player" {
-				tenantBillings[index].BillingYen += 10
-			}
-		}
+		fl.Close()
 	}
 
 	// for _, t := range ts {
