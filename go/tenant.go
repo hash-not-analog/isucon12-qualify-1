@@ -111,6 +111,8 @@ func competitionFinishHandler(c echo.Context) error {
 			now, now, id, err,
 		)
 	}
+
+	competitionCache.Delete(id)
 	return c.JSON(http.StatusOK, SuccessResult{Status: true})
 }
 
