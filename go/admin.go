@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"log"
 	"net/http"
 	"strconv"
 	"time"
@@ -173,6 +174,8 @@ func tenantsBillingHandler(c echo.Context) error {
 		}
 	}
 
+	log.Println("tenantBillings:", len(tenantBillings))
+
 	currentCompID := ""
 
 	for i := range tenantBillings {
@@ -218,6 +221,10 @@ func tenantsBillingHandler(c echo.Context) error {
 	tenantIDs := make([]int64, 0, len(tenantBillings))
 	for i := range tenantBillings {
 		tenantIDs = append(tenantIDs, tenantBillings[i].tenantID)
+	}
+
+	for i := range tenantIDs {
+		log.Println("tenantIDs:", tenantIDs[i])
 	}
 
 	query, params, err := sqlx.In(
