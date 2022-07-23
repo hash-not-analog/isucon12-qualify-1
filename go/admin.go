@@ -190,7 +190,7 @@ func tenantsBillingHandler(c echo.Context) error {
 		if err := tenantDB.SelectContext(
 			ctx,
 			&scoredPlayers,
-			"SELECT DISTINCT(player_id) as pid, competition_id WHERE tenant_id = ? FROM player_score ORDER BY competition_id",
+			"SELECT DISTINCT(player_id) as pid, competition_id FROM player_score WHERE tenant_id = ? ORDER BY competition_id",
 			tenantBillings[i].tenantID,
 		); err != nil && err != sql.ErrNoRows {
 			return fmt.Errorf("error Select count player_score: %w", err)
