@@ -14,6 +14,10 @@ import (
 	"github.com/logica0419/helpisu"
 )
 
+var (
+	visitHistories = helpisu.NewCache[int, []VisitHistoryRow]()
+)
+
 type PlayerScoreDetail struct {
 	CompetitionTitle string `json:"competition_title"`
 	Score            int64  `json:"score"`
@@ -196,6 +200,10 @@ func competitionRankingHandler(c echo.Context) error {
 		tenant.ID = v.tenantID
 	}
 
+	visitHistory, _ := visitHistories.Get(0)
+	visitHistory = append(visitHistory, VisitHistoryRow{v.playerID, tenant.ID, competitionID, now, now})
+	visitHistories.Set(0, visitHistory)
+
 	if _, err := adminDB.ExecContext(
 		ctx,
 		"INSERT INTO visit_history (player_id, tenant_id, competition_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
@@ -285,6 +293,16 @@ func competitionRankingHandler(c echo.Context) error {
 		},
 	}
 	return c.JSON(http.StatusOK, res)
+}
+
+func delayedInsertVisitHistory() {
+	visitHistory, _ := visitHistories.Get(0)
+	_, _ = adminDB.NamedExec(
+		"INSERT INTO visit_history (player_id, tenant_id, competition_id, created_at, updated_at) VALUES (:player_id, :tenant_id, :competition_id, :created_at, :updated_at)",
+		visitHistory,
+	)
+	visitHistory = make([]VisitHistoryRow, 0, 100)
+	visitHistories.Set(0, visitHistory)
 }
 
 type CompetitionsHandlerResult struct {
