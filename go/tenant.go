@@ -37,7 +37,7 @@ func competitionsAddHandler(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusForbidden, "role organizer required")
 	}
 
-	// tenantDB, err := connectToTenantDB(v.tenantID)
+	tenantDB, err := connectToTenantDB(v.tenantID)
 	if err != nil {
 		return err
 	}
@@ -49,10 +49,16 @@ func competitionsAddHandler(c echo.Context) error {
 	if err != nil {
 		return fmt.Errorf("error dispenseID: %w", err)
 	}
-
-	competitions, _ := competitionBuffer.Get(v.tenantID)
-	competitions = append(competitions, CompetitionRow{v.tenantID, id, title, sql.NullInt64{}, now, now})
-	competitionBuffer.Set(v.tenantID, competitions)
+	if _, err := tenantDB.ExecContext(
+		ctx,
+		"INSERT INTO competition (id, tenant_id, title, finished_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+		id, v.tenantID, title, sql.NullInt64{}, now, now,
+	); err != nil {
+		return fmt.Errorf(
+			"error Insert competition: id=%s, tenant_id=%d, title=%s, finishedAt=null, createdAt=%d, updatedAt=%d, %w",
+			id, v.tenantID, title, now, now, err,
+		)
+	}
 
 	res := CompetitionsAddHandlerResult{
 		Competition: CompetitionDetail{
@@ -62,18 +68,6 @@ func competitionsAddHandler(c echo.Context) error {
 		},
 	}
 	return c.JSON(http.StatusOK, SuccessResult{Status: true, Data: res})
-}
-
-func delayedInsertCompetition() {
-	tenantDBs, _ := tenantDBCache.Get(0)
-	for id, tenantDB := range tenantDBs {
-		competitions, _ := competitionBuffer.Get(id)
-		_, _ = tenantDB.NamedExec(
-			"INSERT INTO competition (id, tenant_id, title, finished_at, created_at, updated_at) VALUES (:id, :tenant_id, :title, :finished_at, :created_at, :updated_at)", competitions,
-		)
-		competitions = make([]CompetitionRow, 0, 100)
-		competitionBuffer.Set(id, competitions)
-	}
 }
 
 // テナント管理者向けAPI
