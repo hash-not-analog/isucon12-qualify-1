@@ -198,6 +198,7 @@ func Run() {
 
 	helpisu.WaitDBStartUp(adminDB.DB)
 
+<<<<<<< HEAD
 	// プール内に保持できるアイドル接続数の制限を設定 (default: 2)
 	adminDB.SetMaxIdleConns(1024)
 	// 接続してから再利用できる最大期間
@@ -212,6 +213,8 @@ func Run() {
 
 	go http.ListenAndServe(":6060", nil)
 
+=======
+>>>>>>> e5076ed243ff93ae46c58f5e04e90c41b7da38bf
 	port := getEnv("SERVER_APP_PORT", "3000")
 	e.Logger.Infof("starting isuports server on : %s ...", port)
 	serverPort := fmt.Sprintf(":%s", port)
