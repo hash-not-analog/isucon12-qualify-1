@@ -19,7 +19,7 @@ TimeoutSec=infinity
 Restart=on-failure
 RuntimeDirectory=mysqld
 RuntimeDirectoryMode=755
-LimitNOFILE=10000
+LimitNOFILE=1006500
 
 # Set enviroment variable MYSQLD_PARENT_PID. This is required for restart.
 Environment=MYSQLD_PARENT_PID=1

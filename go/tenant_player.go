@@ -91,7 +91,7 @@ func playersAddHandler(c echo.Context) error {
 
 	pds := make([]PlayerDetail, 0, len(displayNames))
 
-	players := make([]PlayerRow, len(displayNames))
+	players := make([]PlayerRow, 0, len(displayNames))
 	for _, displayName := range displayNames {
 		id, err := dispenseID(ctx)
 		if err != nil {
@@ -159,6 +159,7 @@ func playerDisqualifiedHandler(c echo.Context) error {
 			true, now, playerID, err,
 		)
 	}
+	playerCache.Delete(playerID)
 	p, err := retrievePlayer(ctx, tenantDB, playerID)
 	if err != nil {
 		// 存在しないプレイヤー
