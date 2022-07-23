@@ -96,7 +96,7 @@ func connectToTenantDB(id int64) (*sqlx.DB, error) {
 
 // テナントDBを新規に作成する
 func createTenantDB(id int64) error {
-	if _, ok := tenantDBs.Get(id); !ok {
+	if _, ok := tenantDBs.Get(id); ok {
 		return nil
 	}
 
