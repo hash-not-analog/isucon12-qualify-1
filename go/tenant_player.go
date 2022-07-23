@@ -99,13 +99,16 @@ func playersAddHandler(c echo.Context) error {
 		}
 
 		now := time.Now().Unix()
-		players = append(players, PlayerRow{v.tenantID, id, displayName, false, now, now})
+		player := PlayerRow{v.tenantID, id, displayName, false, now, now}
+		players = append(players, player)
 
 		pds = append(pds, PlayerDetail{
-			ID:             id,
-			DisplayName:    displayName,
-			IsDisqualified: false,
+			ID:             player.ID,
+			DisplayName:    player.DisplayName,
+			IsDisqualified: player.IsDisqualified,
 		})
+
+		playerCache.Set(id, player)
 	}
 
 	_, err = tenantDB.NamedExec("INSERT INTO player (id, tenant_id, display_name, is_disqualified, created_at, updated_at) values (:id, :tenant_id, :display_name, :is_disqualified, :created_at, :updated_at)", players)
