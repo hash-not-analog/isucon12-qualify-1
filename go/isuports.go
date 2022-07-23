@@ -78,7 +78,7 @@ func tenantDBPath(id int64) string {
 func connectToTenantDB(id int64) (*sqlx.DB, error) {
 	tenantDB, ok := tenantDBs.Get(id)
 	if ok {
-		return tenantDB
+		return tenantDB, nil
 	}
 	p := tenantDBPath(id)
 	db, err := sqlx.Open(sqliteDriverName, fmt.Sprintf("file:%s?mode=rw", p))
