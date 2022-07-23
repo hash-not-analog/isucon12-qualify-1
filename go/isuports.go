@@ -196,6 +196,8 @@ func Run() {
 	adminDB.SetMaxOpenConns(10)
 	defer adminDB.Close()
 
+	tenantDBs = helpisu.NewCache[int, *sqlx.DB]()
+
 	go http.ListenAndServe(":6060", nil)
 
 	port := getEnv("SERVER_APP_PORT", "3000")
