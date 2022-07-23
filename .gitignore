@@ -1,0 +1,17 @@
+sqlite-trace.log
+./sql/admin/90_data.sql
+./tenant_db/1.db
+java/
+node/
+perl/
+php/
+python/
+ruby/
+rust/
+docker-compose-java.yml
+docker-compose-node.yml
+docker-compose-perl.yml
+docker-compose-php.yml
+docker-compose-python.yml
+docker-compose-ruby.yml
+docker-compose-rust.yml
