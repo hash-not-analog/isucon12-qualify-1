@@ -1,6 +1,7 @@
 sqlite-trace.log
 ./sql/admin/90_data.sql
 ./tenant_db/1.db
+go/cmd/isuports/isuports
 java/
 node/
 perl/
